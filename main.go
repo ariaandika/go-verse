@@ -1,9 +1,6 @@
 package main
 
 import (
-	// "fmt"
-	// "io"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -12,49 +9,40 @@ import (
 )
 
 func main() {
-  // args := os.Args[1:]
-  port := fmt.Sprintf(":%s", getEnv("PORT", "8000"))
-  target := getEnv("TARGET", "3000")
 
-  var key string
-  var cert string
+    port := ":8000"
+    url, err := url.Parse("http://localhost:3000")
 
-  for i, arg := range os.Args {
-    if arg == "--key" {
-      key = os.Args[i + 1]
-    } else if arg == "--cert" {
-      cert = os.Args[i + 1]
+    if err != nil {
+        log.Fatal(err)
     }
-  }
 
-  // originServerHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-  //
-  //   io.Copy(w, r.Body)
-  //   // io.Copy(os.Stdout, r.Body)
-  //
-  //   fmt.Fprintf(w, "Hello, World!")
-  // })
+    var key string
+    var cert string
 
-  url, err := url.Parse(fmt.Sprintf("http://localhost:%s", target))
-
-  if err != nil {
-    fmt.Errorf("Oof url")
-    return
-  }
-
-  server := httputil.NewSingleHostReverseProxy(url)
+    proxyServer := httputil.NewSingleHostReverseProxy(url)
+    fileServer := http.FileServer(http.Dir("./static"))
 
 
-  if key != "" && cert != "" {
-    log.Fatal(http.ListenAndServeTLS(port, cert, key, server))
-  } else {
-    log.Fatal(http.ListenAndServe(port, server))
-  }
+    http.HandleFunc("/", func(w http.ResponseWriter,r *http.Request) {
+        if r.Host == "example.com" {
+            proxyServer.ServeHTTP(w,r)
+        } else {
+            fileServer.ServeHTTP(w,r)
+        }
+    })
+
+
+    if key != "" && cert != "" {
+        log.Fatal(http.ListenAndServeTLS(port, cert, key, nil))
+    } else {
+        log.Fatal(http.ListenAndServe(port, nil))
+    }
 }
 
 func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
+    if value, exists := os.LookupEnv(key); exists {
+        return value
+    }
+    return fallback
 }
