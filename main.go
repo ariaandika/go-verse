@@ -1,58 +1,64 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 )
 
+var hosts = map[string]interface{}{}
+
 func main() {
-
 	port := ":8000"
-	url, err := url.Parse("http://localhost:3000")
 
-	if err != nil {
-		log.Fatal(err)
-	}
+    for _, arg := range os.Environ() {
+        env := strings.Split(arg, "=")
+        conf := strings.Split(env[1], ":")
+        if strings.HasPrefix(env[0], "SERVE") {
+            hosts[conf[0]] = http.FileServer(http.Dir(conf[1]))
+        }
+        if strings.HasPrefix(env[0], "PROXY") {
+            hosts[conf[0]] = conf[1]
+        }
+    }
 
-	var key string
-	var cert string
-
-	proxyServer := httputil.NewSingleHostReverseProxy(url)
-	fileServer := http.FileServer(http.Dir("./static"))
-
-	hosts := map[string]http.Handler{
-        "example.com": proxyServer,
-        "static.example.com": fileServer,
+    proxy := &httputil.ReverseProxy{
+        Rewrite: func(p *httputil.ProxyRequest) {
+            switch v := hosts[p.In.Host].(type) {
+            case string:
+                url, _ := url.Parse(fmt.Sprintf("http://localhost:%s", v))
+                p.SetURL(url)
+                p.Out.Host = p.In.Host
+            }
+        },
     }
 
 	log.SetOutput(io.Discard)
 	// logger := log.New(os.Stdout, "", 0)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		target, ok := hosts[r.Host]
-
-		if !ok {
+        switch v := hosts[r.Host].(type) {
+		case string:
+            proxy.ServeHTTP(w, r)
+		case http.Handler:
+			v.ServeHTTP(w, r)
+		default:
 			http.NotFound(w, r)
-			return
 		}
-
-		target.ServeHTTP(w, r)
 	})
 
-	if key != "" && cert != "" {
+    key, keyOk   := os.LookupEnv("KEY");
+    cert, certOk := os.LookupEnv("CERT")
+
+    if keyOk && certOk {
 		log.Fatal(http.ListenAndServeTLS(port, cert, key, nil))
 	} else {
 		log.Fatal(http.ListenAndServe(port, nil))
 	}
 }
 
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
-}
