@@ -1,3 +1,3 @@
-module go-verse/madman
+module go-verse/main
 
 go 1.21.0
